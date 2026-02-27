@@ -86,7 +86,11 @@ class TestMapper:
         for pattern in self._patterns:
             for path in self._repo.glob(pattern):
                 if path.is_file() and path.name not in _EXCLUDED_FILES:
-                    test_files.add(str(path.relative_to(self._repo)))
+                    try:
+                        test_files.add(str(path.relative_to(self._repo)))
+                    except ValueError:
+                        # Skip files outside repo root
+                        continue
 
         self._test_files = sorted(test_files)
         logger.info("Discovered %d test files in %s", len(self._test_files), self._repo)

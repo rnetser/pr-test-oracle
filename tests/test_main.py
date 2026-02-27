@@ -19,6 +19,7 @@ def mock_settings():
 
         get_settings.cache_clear()
         yield
+        get_settings.cache_clear()
 
 
 @pytest.fixture

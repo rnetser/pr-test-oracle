@@ -120,7 +120,7 @@ class GitHubClient:
             "--repo",
             f"{pr_info.owner}/{pr_info.repo}",
             "--json",
-            "title,body,baseRefName,headRefName,headRepositoryOwner,headRepository,url",
+            "title,body,baseRefName,headRefName,headRepositoryOwner,headRepository,headRefOid,url",
         ]
         output = await self._run_gh(cmd, f"view PR #{pr_info.pr_number}")
         return json.loads(output)
@@ -154,41 +154,46 @@ class GitHubClient:
         return url if url.startswith("https://") else None
 
     async def post_review(self, pr_info: PRInfo, body: str) -> tuple[str | None, bool]:
-        """Post a review comment on a PR that can be resolved.
+        """Post a file-level review comment on a PR.
 
-        Fetches the PR diff to find a valid line to attach the comment to,
-        then creates a review with a file-level comment on that line.
+        Uses the pull request comments API to create a file-level comment
+        attached to the first changed file. File-level comments appear in
+        the Files Changed tab and have a "Resolve conversation" button.
+
+        Falls back to a regular PR comment if the review API fails.
 
         Args:
             pr_info: PR information.
             body: The review comment content (markdown).
 
         Returns:
-            Tuple of (url, is_review). is_review is True if a proper review
-            was posted, False if it fell back to a regular comment.
+            Tuple of (url, is_review). is_review is True if a file-level
+            review comment was posted, False if it fell back to a regular comment.
         """
-        # Get diff to find a valid file and line number
-        diff = await self.get_pr_diff(pr_info)
-        file_path, line_number = _parse_first_diff_line(diff)
-        if not file_path:
-            # Fallback to regular comment if diff parsing fails
+        # Get changed files and head commit SHA
+        changed_files = await self.get_pr_files(pr_info)
+        if not changed_files:
+            logger.warning("No changed files found, falling back to regular comment")
+            url = await self.post_comment(pr_info, body)
+            return url, False
+
+        pr_details = await self.get_pr_details(pr_info)
+        commit_id = pr_details.get("headRefOid", "")
+        if not commit_id:
             logger.warning(
-                "Could not parse diff for review comment, falling back to regular comment"
+                "Could not get head commit SHA, falling back to regular comment"
             )
             url = await self.post_comment(pr_info, body)
             return url, False
 
+        changed_file = changed_files[0]
+
         payload = json.dumps(
             {
-                "event": "COMMENT",
-                "comments": [
-                    {
-                        "path": file_path,
-                        "body": body,
-                        "line": line_number,
-                        "side": "RIGHT",
-                    }
-                ],
+                "commit_id": commit_id,
+                "path": changed_file,
+                "body": body,
+                "subject_type": "file",
             }
         )
 
@@ -199,17 +204,18 @@ class GitHubClient:
             "POST",
             "-H",
             "Accept: application/vnd.github+json",
-            f"repos/{pr_info.owner}/{pr_info.repo}/pulls/{pr_info.pr_number}/reviews",
+            "-H",
+            "X-GitHub-Api-Version: 2022-11-28",
+            f"repos/{pr_info.owner}/{pr_info.repo}/pulls/{pr_info.pr_number}/comments",
             "--input",
             "-",
         ]
         logger.info(
-            "Posting review comment on PR #%d in %s/%s (file: %s, line: %d)",
+            "Posting file-level review comment on PR #%d in %s/%s (file: %s)",
             pr_info.pr_number,
             pr_info.owner,
             pr_info.repo,
-            file_path,
-            line_number,
+            changed_file,
         )
 
         try:
@@ -228,8 +234,12 @@ class GitHubClient:
 
         if result.returncode != 0:
             error_detail = result.stderr or result.stdout or "unknown error"
-            msg = f"gh CLI failed to post review on PR #{pr_info.pr_number}: {error_detail}"
-            raise RuntimeError(msg)
+            logger.warning(
+                "Review comment API failed (%s), falling back to regular comment",
+                error_detail.strip(),
+            )
+            url = await self.post_comment(pr_info, body)
+            return url, False
 
         try:
             data = json.loads(result.stdout)

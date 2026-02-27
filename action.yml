@@ -12,7 +12,7 @@ inputs:
   ai_model:
     description: 'AI model to use'
     required: false
-    default: 'claude-opus-4-6[1m]'
+    default: 'claude-opus-4-6[1m]'  # Valid model ID for Claude Code CLI via Vertex AI ([1m] = 1M context window)
   test_patterns:
     description: 'JSON array of test file glob patterns (e.g., ["tests/**/*.py"])'
     required: false
@@ -52,11 +52,12 @@ runs:
         fi
 
         echo "::group::PR Test Oracle Request"
-        echo "$PAYLOAD" | jq '.'
+        echo "$PAYLOAD" | jq 'del(.github_token)'
         echo "::endgroup::"
 
         # Call the service
         RESPONSE=$(curl -s -w "\n%{http_code}" \
+          --max-time 600 --connect-timeout 30 \
           -X POST "${ORACLE_URL}/analyze" \
           -H "Content-Type: application/json" \
           -d "$PAYLOAD")
@@ -74,5 +75,9 @@ runs:
         fi
 
         # Set outputs
-        echo "response=$BODY" >> "$GITHUB_OUTPUT"
-        echo "summary=$(echo "$BODY" | jq -r '.summary // "No summary"')" >> "$GITHUB_OUTPUT"
+        {
+          echo "response<<EOF_RESPONSE"
+          echo "$BODY"
+          echo "EOF_RESPONSE"
+          echo "summary=$(echo "$BODY" | jq -r '.summary // "No summary"')"
+        } >> "$GITHUB_OUTPUT"

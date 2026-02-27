@@ -50,6 +50,9 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /usr/local/bin/uv
 # Switch to non-root user for CLI installs
 USER appuser
 
+# CLI versions are intentionally unpinned to always get latest updates.
+# This matches the reference project (jenkins-job-insight) pattern.
+
 # Install Claude Code CLI (installs to ~/.local/bin)
 RUN /bin/bash -o pipefail -c "curl -fsSL https://claude.ai/install.sh | bash"
 

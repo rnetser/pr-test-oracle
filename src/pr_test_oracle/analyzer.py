@@ -279,13 +279,16 @@ def _format_pr_comment(
         parts.append("")
 
     if not recommendations:
-        parts.append("No tests identified for this PR.\n")
+        parts.append(
+            "No tests need to run for this PR. The changes do not appear "
+            "to affect any testable code paths.\n"
+        )
 
     # Summary
     parts.append("### Summary")
-    total = len(recommendations)
+    unique_files = len({r.test_file for r in recommendations})
     parts.append(
-        f"- **{total} test files** recommended ({len(critical)} critical, {len(standard)} standard)"
+        f"- **{unique_files} test files** recommended ({len(critical)} critical, {len(standard)} standard)"
     )
     parts.append(f"- AI Provider: {ai_provider.capitalize()} ({ai_model})")
 
@@ -427,8 +430,9 @@ async def analyze_pr(
         )
 
         # Build summary
+        unique_files = len({r.test_file for r in recommendations})
         summary = (
-            f"{len(recommendations)} test files recommended "
+            f"{unique_files} test files recommended "
             f"({critical_count} critical, {standard_count} standard)"
         )
 
@@ -436,15 +440,14 @@ async def analyze_pr(
         review_posted = False
         review_url = None
 
-        if recommendations:
-            comment_body = _format_pr_comment(recommendations, ai_provider, ai_model)
-            try:
-                review_url, review_posted = await gh_client.post_review(
-                    pr_info, comment_body
-                )
-                logger.info("Posted PR review: %s", review_url)
-            except RuntimeError:
-                logger.exception("Failed to post PR review")
+        comment_body = _format_pr_comment(recommendations, ai_provider, ai_model)
+        try:
+            review_url, review_posted = await gh_client.post_review(
+                pr_info, comment_body
+            )
+            logger.info("Posted PR review: %s", review_url)
+        except RuntimeError:
+            logger.exception("Failed to post PR review")
 
         return AnalyzeResponse(
             pr_url=body.pr_url,

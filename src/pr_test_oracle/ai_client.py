@@ -78,6 +78,8 @@ async def run_parallel_with_limit(
     Returns:
         List of results (including exceptions if any failed).
     """
+    if max_concurrency < 1:
+        max_concurrency = MAX_CONCURRENT_AI_CALLS
     semaphore = asyncio.Semaphore(max_concurrency)
 
     async def bounded(coro: Coroutine[Any, Any, Any]) -> object:
@@ -147,6 +149,11 @@ async def call_ai_cli(
         return (
             False,
             f"{provider_info} CLI error: Analysis timed out after {effective_timeout} minutes",
+        )
+    except FileNotFoundError:
+        return (
+            False,
+            f"{provider_info} CLI error: '{config.binary}' not found. Ensure the CLI is installed and on PATH.",
         )
 
     if result.returncode != 0:

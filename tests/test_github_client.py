@@ -1,5 +1,6 @@
 """Tests for GitHub client module."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -187,38 +188,49 @@ class TestRunGhTimeout:
 class TestPostReview:
     """Tests for post_review."""
 
-    async def test_successful_review(
-        self, gh_client: GitHubClient, pr_info: PRInfo
-    ) -> None:
-        """Test posting a review with a valid diff line."""
-        mock_diff_result = MagicMock()
-        mock_diff_result.returncode = 0
-        mock_diff_result.stdout = "diff --git a/src/auth.py b/src/auth.py\n--- a/src/auth.py\n+++ b/src/auth.py\n@@ -1,3 +1,4 @@\n+import os\n def login():\n     pass\n"
-        mock_diff_result.stderr = ""
+    async def test_successful_review(self, gh_client, pr_info):
+        """Test posting a file-level review comment."""
+        mock_files_result = MagicMock()
+        mock_files_result.returncode = 0
+        mock_files_result.stdout = "src/auth.py\n"
+        mock_files_result.stderr = ""
+
+        mock_details_result = MagicMock()
+        mock_details_result.returncode = 0
+        mock_details_result.stdout = json.dumps(
+            {
+                "title": "test",
+                "headRefOid": "abc123",
+                "headRefName": "feat/test",
+                "baseRefName": "main",
+                "headRepositoryOwner": {"login": "owner"},
+                "headRepository": {"name": "repo"},
+                "url": "https://github.com/owner/repo/pull/42",
+            }
+        )
+        mock_details_result.stderr = ""
 
         mock_review_result = MagicMock()
         mock_review_result.returncode = 0
         mock_review_result.stdout = (
-            '{"html_url": "https://github.com/o/r/pull/42#pullrequestreview-1"}'
+            '{"html_url": "https://github.com/o/r/pull/42#discussion_r123"}'
         )
         mock_review_result.stderr = ""
 
         with patch(
             "pr_test_oracle.github_client.asyncio.to_thread",
-            side_effect=[mock_diff_result, mock_review_result],
+            side_effect=[mock_files_result, mock_details_result, mock_review_result],
         ):
             url, is_review = await gh_client.post_review(pr_info, "test body")
-        assert url == "https://github.com/o/r/pull/42#pullrequestreview-1"
+        assert url == "https://github.com/o/r/pull/42#discussion_r123"
         assert is_review is True
 
-    async def test_fallback_to_comment_on_empty_diff(
-        self, gh_client: GitHubClient, pr_info: PRInfo
-    ) -> None:
-        """Test fallback to post_comment when diff has no parseable lines."""
-        mock_diff_result = MagicMock()
-        mock_diff_result.returncode = 0
-        mock_diff_result.stdout = ""  # Empty diff
-        mock_diff_result.stderr = ""
+    async def test_fallback_on_no_files(self, gh_client, pr_info):
+        """Test fallback when no changed files."""
+        mock_files_result = MagicMock()
+        mock_files_result.returncode = 0
+        mock_files_result.stdout = "\n"
+        mock_files_result.stderr = ""
 
         mock_comment_result = MagicMock()
         mock_comment_result.returncode = 0
@@ -227,34 +239,56 @@ class TestPostReview:
 
         with patch(
             "pr_test_oracle.github_client.asyncio.to_thread",
-            side_effect=[mock_diff_result, mock_comment_result],
+            side_effect=[mock_files_result, mock_comment_result],
         ):
             url, is_review = await gh_client.post_review(pr_info, "test body")
         assert url == "https://github.com/o/r/pull/42#issuecomment-1"
         assert is_review is False
 
-    async def test_review_api_failure(
-        self, gh_client: GitHubClient, pr_info: PRInfo
-    ) -> None:
-        """Test RuntimeError when review API fails."""
-        mock_diff_result = MagicMock()
-        mock_diff_result.returncode = 0
-        mock_diff_result.stdout = (
-            "diff --git a/f.py b/f.py\n--- a/f.py\n+++ b/f.py\n@@ -0,0 +1 @@\n+new\n"
+    async def test_fallback_on_api_failure(self, gh_client, pr_info):
+        """Test fallback when review API fails."""
+        mock_files_result = MagicMock()
+        mock_files_result.returncode = 0
+        mock_files_result.stdout = "src/auth.py\n"
+        mock_files_result.stderr = ""
+
+        mock_details_result = MagicMock()
+        mock_details_result.returncode = 0
+        mock_details_result.stdout = json.dumps(
+            {
+                "title": "test",
+                "headRefOid": "abc123",
+                "headRefName": "feat/test",
+                "baseRefName": "main",
+                "headRepositoryOwner": {"login": "owner"},
+                "headRepository": {"name": "repo"},
+                "url": "https://github.com/owner/repo/pull/42",
+            }
         )
-        mock_diff_result.stderr = ""
+        mock_details_result.stderr = ""
 
         mock_review_result = MagicMock()
         mock_review_result.returncode = 1
         mock_review_result.stdout = ""
         mock_review_result.stderr = "422 Unprocessable Entity"
 
+        mock_comment_result = MagicMock()
+        mock_comment_result.returncode = 0
+        mock_comment_result.stdout = "https://github.com/o/r/pull/42#issuecomment-2\n"
+        mock_comment_result.stderr = ""
+
         with patch(
             "pr_test_oracle.github_client.asyncio.to_thread",
-            side_effect=[mock_diff_result, mock_review_result],
+            side_effect=[
+                mock_files_result,
+                mock_details_result,
+                mock_review_result,
+                mock_comment_result,
+            ],
         ):
-            with pytest.raises(RuntimeError, match="422"):
-                await gh_client.post_review(pr_info, "test body")
+            url, is_review = await gh_client.post_review(pr_info, "test body")
+        assert url == "https://github.com/o/r/pull/42#issuecomment-2"
+        assert is_review is False
 
 
 class TestParseFirstDiffLine:

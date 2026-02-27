@@ -52,4 +52,4 @@ Every environment variable that configures the service must also be available as
 When adding a new environment variable:
 1. Add the field to `Settings` in `config.py`
 2. Add the corresponding request field to `AnalyzeRequest` in `models.py`
-3. Add the field to `_merge_settings()` in `main.py`
+3. Add the field to `_merge_settings()` in `analyzer.py`

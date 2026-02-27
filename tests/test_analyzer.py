@@ -227,7 +227,7 @@ class TestFormatPrComment:
 
     def test_empty_recommendations(self) -> None:
         comment = _format_pr_comment([], "claude", "sonnet")
-        assert "No tests identified for this PR" in comment
+        assert "No tests need to run for this PR" in comment
 
     def test_only_critical(self) -> None:
         recs = [
