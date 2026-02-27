@@ -210,9 +210,10 @@ class TestMapper:
                 candidates.add(test_file)
                 continue
 
-            # Strategy 2: Module name appears in test file name
+            # Strategy 2: Module name appears in test file name as a word boundary
             # e.g., github_client.py -> test_github_client.py
-            if stem in test_stem:
+            # but auth.py should NOT match test_oauth.py
+            if f"_{stem}" in test_stem or test_stem.startswith(stem):
                 candidates.add(test_file)
                 continue
 

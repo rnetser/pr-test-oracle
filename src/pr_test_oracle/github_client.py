@@ -228,6 +228,9 @@ class GitHubClient:
                 env=self._env,
                 input=payload,
             )
+        except FileNotFoundError as exc:
+            msg = "gh CLI not found. Ensure GitHub CLI is installed and on PATH."
+            raise RuntimeError(msg) from exc
         except subprocess.TimeoutExpired as exc:
             msg = f"gh CLI timed out: post review on PR #{pr_info.pr_number}"
             raise RuntimeError(msg) from exc
@@ -297,6 +300,9 @@ class GitHubClient:
                 timeout=120,
                 env=self._env,
             )
+        except FileNotFoundError as exc:
+            msg = "gh CLI not found. Ensure GitHub CLI is installed and on PATH."
+            raise RuntimeError(msg) from exc
         except subprocess.TimeoutExpired as exc:
             msg = f"gh CLI timed out: {description}"
             raise RuntimeError(msg) from exc
