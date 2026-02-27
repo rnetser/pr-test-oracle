@@ -8,6 +8,7 @@ import pytest
 
 from pr_test_oracle.test_mapper import (
     _CONFIG_FILES,
+    _SOURCE_EXTENSIONS,
     TestMapper,
     _is_test_file,
     _strip_source_prefix,
@@ -100,7 +101,34 @@ class TestMapChangedFiles:
         mappings = mapper.map_changed_files(["README.md"])
         assert len(mappings) == 1
         assert mappings[0].candidate_tests == []
-        assert "Non-Python file" in mappings[0].mapping_reason
+        assert "Non-source file" in mappings[0].mapping_reason
+
+    def test_non_python_source_file_runs_candidate_mapping(
+        self, temp_repo: Path
+    ) -> None:
+        """Non-Python source files with recognized extensions should attempt candidate mapping."""
+        # Create a JS source file and a matching test file
+        (temp_repo / "src" / "myapp" / "auth.js").write_text(
+            "export function login() {}"
+        )
+        (temp_repo / "tests" / "test_auth.js").write_text("test('login', () => {})")
+
+        mapper = TestMapper(
+            str(temp_repo),
+            test_patterns=["tests/**/*.py", "tests/**/*.js"],
+        )
+        mappings = mapper.map_changed_files(["src/myapp/auth.js"])
+        assert len(mappings) == 1
+        assert "tests/test_auth.js" in mappings[0].candidate_tests
+        assert "Naming convention" in mappings[0].mapping_reason
+
+    def test_non_python_source_file_no_candidates(self, temp_repo: Path) -> None:
+        """Non-Python source files with no matching tests get an appropriate reason."""
+        mapper = TestMapper(str(temp_repo))
+        mappings = mapper.map_changed_files(["src/myapp/widget.ts"])
+        assert len(mappings) == 1
+        assert mappings[0].candidate_tests == []
+        assert "No direct mapping found" in mappings[0].mapping_reason
 
     def test_no_candidates_found(self, temp_repo: Path) -> None:
         mapper = TestMapper(str(temp_repo))
@@ -111,7 +139,9 @@ class TestMapChangedFiles:
 
     def test_multiple_changed_files(self, temp_repo: Path) -> None:
         mapper = TestMapper(str(temp_repo))
-        mappings = mapper.map_changed_files(["src/myapp/auth.py", "src/myapp/config.py"])
+        mappings = mapper.map_changed_files(
+            ["src/myapp/auth.py", "src/myapp/config.py"]
+        )
         assert len(mappings) == 2
 
 
@@ -159,3 +189,7 @@ class TestHelperFunctions:
         assert "pyproject.toml" in _CONFIG_FILES
         assert "setup.py" in _CONFIG_FILES
         assert "conftest.py" in _CONFIG_FILES
+
+    def test_source_extensions_includes_common_languages(self) -> None:
+        for ext in (".py", ".js", ".ts", ".go", ".java", ".rb", ".rs"):
+            assert ext in _SOURCE_EXTENSIONS

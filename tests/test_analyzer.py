@@ -1,6 +1,7 @@
 """Tests for analyzer module."""
 
 import json
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -37,7 +38,9 @@ class TestResolveAiConfig:
 
     def test_from_settings(self) -> None:
         body = AnalyzeRequest(pr_url="https://github.com/o/r/pull/1")
-        settings = Settings(github_token="test-token", ai_provider="gemini", ai_model="pro")
+        settings = Settings(
+            github_token="test-token", ai_provider="gemini", ai_model="pro"
+        )
         provider, model = _resolve_ai_config(body, settings)
         assert provider == "gemini"
         assert model == "pro"
@@ -63,7 +66,9 @@ class TestResolveAiConfig:
             ai_provider="cursor",
             ai_model="gpt-4",
         )
-        settings = Settings(github_token="test-token", ai_provider="claude", ai_model="sonnet")
+        settings = Settings(
+            github_token="test-token", ai_provider="claude", ai_model="sonnet"
+        )
         provider, model = _resolve_ai_config(body, settings)
         assert provider == "cursor"
         assert model == "gpt-4"
@@ -82,13 +87,11 @@ class TestMergeSettings:
         body = AnalyzeRequest(
             pr_url="https://github.com/o/r/pull/1",
             ai_provider="gemini",
-            post_comment=False,
         )
-        settings = Settings(github_token="test-token", ai_provider="claude", post_comment=True)
+        settings = Settings(github_token="test-token", ai_provider="claude")
         merged = _merge_settings(body, settings)
         assert merged is not settings
         assert merged.ai_provider == "gemini"
-        assert merged.post_comment is False
 
     def test_github_token_wrapped(self) -> None:
         body = AnalyzeRequest(
@@ -108,7 +111,7 @@ class TestParseAiResponse:
         data = [
             {
                 "test_file": "tests/test_auth.py",
-                "test_name": None,
+                "test_name": "(all)",
                 "reason": "Changed auth",
                 "priority": "critical",
                 "confidence": "high",
@@ -121,7 +124,14 @@ class TestParseAiResponse:
 
     def test_json_in_code_block(self) -> None:
         json_str = json.dumps(
-            [{"test_file": "t.py", "reason": "r", "priority": "standard", "confidence": "low"}]
+            [
+                {
+                    "test_file": "t.py",
+                    "reason": "r",
+                    "priority": "standard",
+                    "confidence": "low",
+                }
+            ]
         )
         text = f"```json\n{json_str}\n```"
         result = _parse_ai_response(text)
@@ -130,7 +140,14 @@ class TestParseAiResponse:
 
     def test_json_with_surrounding_text(self) -> None:
         json_str = json.dumps(
-            [{"test_file": "t.py", "reason": "r", "priority": "critical", "confidence": "medium"}]
+            [
+                {
+                    "test_file": "t.py",
+                    "reason": "r",
+                    "priority": "critical",
+                    "confidence": "medium",
+                }
+            ]
         )
         text = f"Here are my recommendations:\n{json_str}\nHope this helps!"
         result = _parse_ai_response(text)
@@ -171,9 +188,10 @@ class TestBuildAiPrompt:
 
     def test_includes_instructions(self) -> None:
         prompt = _build_ai_prompt("diff", [], {})
+        assert "expert software testing engineer" in prompt
+        assert "SELECTIVE" in prompt
         assert "JSON array" in prompt
         assert "priority" in prompt
-        assert "confidence" in prompt
 
 
 class TestFormatPrComment:
@@ -190,22 +208,26 @@ class TestFormatPrComment:
             ),
             TestRecommendation(
                 test_file="tests/test_api.py",
-                test_name=None,
                 reason="API depends on auth",
                 priority="standard",
                 confidence="medium",
             ),
         ]
         comment = _format_pr_comment(recs, "claude", "sonnet")
-        assert "Test Recommendations" in comment
+        assert "Tests to Run" in comment
         assert "Critical" in comment
         assert "Standard" in comment
-        assert "test_auth.py" in comment
-        assert "2 tests" in comment
+        expected_critical = "- [ ] `tests/test_auth.py::TestAuth::test_login` — Changed auth (High confidence)"
+        assert expected_critical in comment
+        expected_standard = (
+            "- [ ] `tests/test_api.py` — API depends on auth (Medium confidence)"
+        )
+        assert expected_standard in comment
+        assert "2 test files" in comment
 
     def test_empty_recommendations(self) -> None:
         comment = _format_pr_comment([], "claude", "sonnet")
-        assert "No specific test recommendations" in comment
+        assert "No tests identified for this PR" in comment
 
     def test_only_critical(self) -> None:
         recs = [
@@ -218,6 +240,7 @@ class TestFormatPrComment:
         ]
         comment = _format_pr_comment(recs, "claude", "sonnet")
         assert "Critical" in comment
+        assert "- [ ] `tests/test_auth.py` — reason (High confidence)" in comment
         assert "Standard" not in comment or "0 standard" in comment
 
 
@@ -230,7 +253,6 @@ class TestAnalyzePr:
             ai_provider="claude",
             ai_model="sonnet",
             repo_path="/tmp/test-repo",
-            post_comment=False,
         )
         settings = Settings(github_token="test-token")
 
@@ -238,7 +260,7 @@ class TestAnalyzePr:
             [
                 {
                     "test_file": "tests/test_auth.py",
-                    "test_name": None,
+                    "test_name": "(all)",
                     "reason": "Changed auth",
                     "priority": "critical",
                     "confidence": "high",
@@ -249,15 +271,25 @@ class TestAnalyzePr:
         with (
             patch("pr_test_oracle.analyzer.GitHubClient") as mock_gh_class,
             patch("pr_test_oracle.analyzer.TestMapper") as mock_mapper_class,
-            patch("pr_test_oracle.analyzer.call_ai_cli", return_value=(True, ai_response)),
+            patch(
+                "pr_test_oracle.analyzer.call_ai_cli", return_value=(True, ai_response)
+            ),
         ):
             mock_gh = mock_gh_class.return_value
             mock_gh.get_pr_diff = AsyncMock(return_value="diff content")
             mock_gh.get_pr_files = AsyncMock(return_value=["src/auth.py"])
+            mock_gh.post_review = AsyncMock(
+                return_value=(
+                    "https://github.com/owner/repo/pull/1#pullrequestreview-1",
+                    True,
+                )
+            )
 
             mock_mapper = mock_mapper_class.return_value
             mock_mapper.map_changed_files.return_value = [
-                TestMapping(source_file="src/auth.py", candidate_tests=["tests/test_auth.py"])
+                TestMapping(
+                    source_file="src/auth.py", candidate_tests=["tests/test_auth.py"]
+                )
             ]
             mock_mapper.get_test_file_contents.return_value = {}
 
@@ -266,7 +298,11 @@ class TestAnalyzePr:
         assert result.pr_url == "https://github.com/owner/repo/pull/1"
         assert len(result.recommendations) == 1
         assert result.recommendations[0].test_file == "tests/test_auth.py"
-        assert result.comment_posted is False
+        assert result.review_posted is True
+        assert (
+            result.review_url
+            == "https://github.com/owner/repo/pull/1#pullrequestreview-1"
+        )
 
     async def test_ai_failure_returns_error_response(self) -> None:
         body = AnalyzeRequest(
@@ -274,7 +310,6 @@ class TestAnalyzePr:
             ai_provider="claude",
             ai_model="sonnet",
             repo_path="/tmp/test-repo",
-            post_comment=False,
         )
         settings = Settings(github_token="test-token")
 
@@ -282,7 +317,8 @@ class TestAnalyzePr:
             patch("pr_test_oracle.analyzer.GitHubClient") as mock_gh_class,
             patch("pr_test_oracle.analyzer.TestMapper") as mock_mapper_class,
             patch(
-                "pr_test_oracle.analyzer.call_ai_cli", return_value=(False, "CLI error: timeout")
+                "pr_test_oracle.analyzer.call_ai_cli",
+                return_value=(False, "CLI error: timeout"),
             ),
         ):
             mock_gh = mock_gh_class.return_value
@@ -297,3 +333,17 @@ class TestAnalyzePr:
 
         assert "failed" in result.summary.lower()
         assert result.recommendations == []
+
+    async def test_missing_github_token_raises(self) -> None:
+        body = AnalyzeRequest(
+            pr_url="https://github.com/o/r/pull/1",
+            ai_provider="claude",
+            ai_model="sonnet",
+        )
+        env = os.environ.copy()
+        env.pop("GITHUB_TOKEN", None)
+        with patch.dict(os.environ, env, clear=True):
+            settings = Settings()  # No github_token
+            assert settings.github_token is None
+            with pytest.raises(ValueError, match="No GitHub token configured"):
+                await analyze_pr(body, settings)

@@ -57,16 +57,18 @@ def _build_cursor_cmd(binary: str, model: str, cwd: Path | None) -> list[str]:
 PROVIDER_CONFIG: dict[str, ProviderConfig] = {
     "claude": ProviderConfig(binary="claude", build_cmd=_build_claude_cmd),
     "gemini": ProviderConfig(binary="gemini", build_cmd=_build_gemini_cmd),
-    "cursor": ProviderConfig(binary="agent", uses_own_cwd=True, build_cmd=_build_cursor_cmd),
+    "cursor": ProviderConfig(
+        binary="agent", uses_own_cwd=True, build_cmd=_build_cursor_cmd
+    ),
 }
 
 VALID_AI_PROVIDERS = set(PROVIDER_CONFIG.keys())
 
 
 async def run_parallel_with_limit(
-    coroutines: list,
+    coroutines: list[Any],
     max_concurrency: int = MAX_CONCURRENT_AI_CALLS,
-) -> list:
+) -> list[Any]:
     """Run coroutines in parallel with bounded concurrency.
 
     Args:

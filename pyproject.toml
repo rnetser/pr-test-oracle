@@ -15,7 +15,7 @@ dependencies = [
 pr-test-oracle = "pr_test_oracle.main:run"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-asyncio"]
+dev = ["pytest", "pytest-asyncio", "pytest-xdist"]
 
 [build-system]
 requires = ["hatchling"]
@@ -30,24 +30,14 @@ pythonpath = ["src"]
 packages = ["src/pr_test_oracle"]
 
 [tool.mypy]
-python_version = "3.12"
-strict = true
-warn_return_any = true
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+warn_unused_ignores = true
+strict_equality = true
+extra_checks = true
 warn_unused_configs = true
-
-[tool.ruff]
-target-version = "py312"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["ALL"]
-ignore = [
-    "D",       # pydocstyle - skip docstring enforcement
-    "COM812",  # trailing-comma (conflicts with formatter)
-    "ISC001",  # single-line-implicit-string-concatenation (conflicts with formatter)
-    "S603",    # subprocess-without-shell-equals-true (we use subprocess intentionally)
-    "S607",    # start-process-with-partial-path (CLI binaries)
-]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "PLR2004", "ANN", "SLF001", "S105", "S106", "S108", "PT011", "ARG001", "PLC0415"]
+warn_redundant_casts = true

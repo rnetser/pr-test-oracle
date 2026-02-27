@@ -12,17 +12,13 @@ inputs:
   ai_model:
     description: 'AI model to use'
     required: false
+    default: 'claude-opus-4-6[1m]'
   test_patterns:
     description: 'JSON array of test file glob patterns (e.g., ["tests/**/*.py"])'
     required: false
-  post_comment:
-    description: 'Whether to post a PR comment with recommendations'
-    required: false
-    default: 'true'
   github_token:
-    description: 'GitHub token for API access'
-    required: false
-    default: ${{ github.token }}
+    description: 'GitHub token for API access (must have permissions to read PRs and post reviews)'
+    required: true
 
 runs:
   using: 'composite'
@@ -35,7 +31,6 @@ runs:
         AI_PROVIDER: ${{ inputs.ai_provider }}
         AI_MODEL: ${{ inputs.ai_model }}
         TEST_PATTERNS: ${{ inputs.test_patterns }}
-        POST_COMMENT: ${{ inputs.post_comment }}
         GITHUB_TOKEN: ${{ inputs.github_token }}
       run: |
         # Build JSON payload
@@ -43,13 +38,11 @@ runs:
           --arg pr_url "$PR_URL" \
           --arg ai_provider "$AI_PROVIDER" \
           --arg ai_model "$AI_MODEL" \
-          --arg post_comment "$POST_COMMENT" \
           --arg github_token "$GITHUB_TOKEN" \
           '{
             pr_url: $pr_url,
             ai_provider: (if $ai_provider != "" then $ai_provider else null end),
             ai_model: (if $ai_model != "" then $ai_model else null end),
-            post_comment: ($post_comment == "true"),
             github_token: $github_token
           }')
 

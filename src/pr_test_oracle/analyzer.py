@@ -6,6 +6,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from pydantic import SecretStr
 from simple_logger.logger import get_logger
@@ -16,6 +17,7 @@ from pr_test_oracle.github_client import GitHubClient
 from pr_test_oracle.models import (
     AnalyzeRequest,
     AnalyzeResponse,
+    PRInfo,
     TestMapping,
     TestRecommendation,
 )
@@ -55,14 +57,13 @@ def _merge_settings(body: AnalyzeRequest, settings: Settings) -> Settings:
     Request values take precedence over environment variable defaults.
     Only non-None request values are applied as overrides.
     """
-    overrides: dict = {}
+    overrides: dict[str, Any] = {}
 
     direct_fields = [
         "ai_provider",
         "ai_model",
         "ai_cli_timeout",
         "test_patterns",
-        "post_comment",
     ]
     for field in direct_fields:
         value = getattr(body, field, None)
@@ -77,7 +78,10 @@ def _merge_settings(body: AnalyzeRequest, settings: Settings) -> Settings:
         merged_data = settings.model_dump(mode="python") | overrides
         # model_dump(mode="python") keeps SecretStr objects as-is,
         # but model_validate would double-wrap them. Extract raw values first.
-        if "github_token" not in overrides and merged_data.get("github_token") is not None:
+        if (
+            "github_token" not in overrides
+            and merged_data.get("github_token") is not None
+        ):
             token = merged_data["github_token"]
             if isinstance(token, SecretStr):
                 merged_data["github_token"] = token.get_secret_value()
@@ -97,17 +101,26 @@ def _build_ai_prompt(
     parts: list[str] = []
 
     parts.append(
-        "You are an expert test engineer. Analyze this PR diff and recommend "
-        "which tests should run to verify the changes.\n"
+        "As an expert software testing engineer, analyze all modified files "
+        "in this PR and create a targeted test execution plan.\n"
     )
 
     parts.append("## PR Diff\n")
+    parts.append(
+        "IMPORTANT: Read the actual code changes below carefully. Do NOT "
+        "base your recommendations on file names alone. Understand WHAT "
+        "changed semantically — new functions, modified logic, changed "
+        "signatures, altered control flow, updated configurations.\n"
+    )
     parts.append(pr_diff)
     parts.append("\n")
 
     parts.append("## Pre-computed Test Mappings\n")
     parts.append(
-        "Static analysis has identified these potential test file matches for the changed files:\n"
+        "Static analysis has identified potential test file matches based on "
+        "naming conventions and directory structure. These are CANDIDATES only — "
+        "you must verify each one by reading the test file contents below and "
+        "confirming it actually tests the changed code paths.\n"
     )
     for mapping in test_mappings:
         parts.append(f"\n### {mapping.source_file}")
@@ -121,21 +134,36 @@ def _build_ai_prompt(
     if test_contents:
         parts.append("## Test File Contents\n")
         parts.append(
-            "Here are the contents of candidate test files so you can understand what they test:\n"
+            "CRITICAL: Read each test file below thoroughly. Understand what "
+            "each test function/class actually verifies. Only recommend a test "
+            "if you can explain the specific connection between the PR changes "
+            "and what the test validates.\n"
         )
-        for path, content in test_contents.items():
-            parts.append(f"\n### {path}\n```python\n{content}\n```\n")
+        for file_path, content in test_contents.items():
+            # Detect language from file extension for proper syntax highlighting
+            lang = _detect_language(file_path)
+            parts.append(f"\n### {file_path}\n```{lang}\n{content}\n```\n")
 
-    parts.append("## Instructions\n")
+    parts.append("## Analysis Instructions\n")
     parts.append(
-        """Analyze the PR changes and return your recommendations as a JSON array.
+        """For each changed file in the PR, determine:
+1. Which existing tests DIRECTLY verify the changed code paths
+2. Which tests could BREAK due to downstream dependencies (imports, shared state, API contracts)
+3. Whether any changes are purely cosmetic (formatting, comments, whitespace) and need NO testing
+
+Be SELECTIVE — only recommend tests with a clear, explainable connection to the changes.
+Do NOT recommend tests just because they are in the same module or have a similar name.
+A test must actually exercise code paths affected by this PR.
 
 For each recommended test, provide:
 - test_file: path to the test file
-- test_name: specific test class/function if applicable (null if the whole file should run)
-- reason: why this test should run (be specific about the connection to the PR changes)
-- priority: "critical" (directly tests changed code) or "standard" (regression safety)
-- confidence: "high", "medium", or "low"
+- test_name: specific test class/function if applicable, or "(all)" if the entire file should run
+- reason: a SPECIFIC explanation of how the PR changes affect what
+  this test verifies (not generic statements like "tests the module")
+- priority: "critical" (directly verifies changed code) or
+  "standard" (regression safety for dependent code)
+- confidence: "high" (certain), "medium" (likely), or
+  "low" (possibly affected)
 
 Your response must be ONLY a valid JSON array. No text before or after. No markdown code blocks.
 
@@ -144,7 +172,7 @@ Example:
   {
     "test_file": "tests/test_auth.py",
     "test_name": "TestAuth::test_login_flow",
-    "reason": "Changed auth middleware directly affects login flow",
+    "reason": "PR modifies hash_password() in auth.py; this test calls login() which invokes it",
     "priority": "critical",
     "confidence": "high"
   }
@@ -153,6 +181,27 @@ Example:
     )
 
     return "\n".join(parts)
+
+
+def _detect_language(file_path: str) -> str:
+    """Detect programming language from file extension for syntax highlighting."""
+    ext = file_path.rsplit(".", 1)[-1] if "." in file_path else ""
+    language_map = {
+        "py": "python",
+        "js": "javascript",
+        "ts": "typescript",
+        "jsx": "javascript",
+        "tsx": "typescript",
+        "go": "go",
+        "java": "java",
+        "rb": "ruby",
+        "rs": "rust",
+        "cs": "csharp",
+        "php": "php",
+        "sh": "bash",
+        "bash": "bash",
+    }
+    return language_map.get(ext, "")
 
 
 def _parse_ai_response(raw_text: str) -> list[TestRecommendation]:
@@ -192,7 +241,9 @@ def _parse_ai_response(raw_text: str) -> list[TestRecommendation]:
         except (json.JSONDecodeError, TypeError, KeyError, ValueError):
             pass
 
-    logger.warning("Failed to parse AI response as JSON array, returning empty recommendations")
+    logger.warning(
+        "Failed to parse AI response as JSON array, returning empty recommendations"
+    )
     return []
 
 
@@ -204,48 +255,71 @@ def _format_pr_comment(
     """Format test recommendations as a PR comment in markdown."""
     parts: list[str] = []
 
-    parts.append("## Test Recommendations\n")
-    parts.append("Based on analysis of the PR changes, here are the recommended tests to run:\n")
+    parts.append("## Tests to Run\n")
+    parts.append("The following tests should be run to verify this PR:\n")
 
     critical = [r for r in recommendations if r.priority == "critical"]
     standard = [r for r in recommendations if r.priority == "standard"]
 
-    if critical:
-        parts.append("### Critical (directly affected)")
-        parts.append("| Test | Reason | Confidence |")
-        parts.append("|------|--------|------------|")
-        for rec in critical:
-            test_name = f"`{rec.test_file}"
-            if rec.test_name:
-                test_name += f"::{rec.test_name}"
-            test_name += "`"
-            parts.append(f"| {test_name} | {rec.reason} | {rec.confidence.capitalize()} |")
-        parts.append("")
-
-    if standard:
-        parts.append("### Standard (regression safety)")
-        parts.append("| Test | Reason | Confidence |")
-        parts.append("|------|--------|------------|")
-        for rec in standard:
-            test_name = f"`{rec.test_file}"
-            if rec.test_name:
-                test_name += f"::{rec.test_name}"
-            test_name += "`"
-            parts.append(f"| {test_name} | {rec.reason} | {rec.confidence.capitalize()} |")
+    for section_title, section_recs in [
+        ("### Critical (directly affected)", critical),
+        ("### Standard (regression safety)", standard),
+    ]:
+        if not section_recs:
+            continue
+        parts.append(section_title)
+        for rec in section_recs:
+            test_ref = f"`{rec.test_file}"
+            if rec.test_name and rec.test_name != "(all)":
+                test_ref += f"::{rec.test_name}"
+            test_ref += "`"
+            confidence = rec.confidence.capitalize()
+            line = f"- [ ] {test_ref} — {rec.reason} ({confidence} confidence)"
+            parts.append(line)
         parts.append("")
 
     if not recommendations:
-        parts.append("No specific test recommendations identified.\n")
+        parts.append("No tests identified for this PR.\n")
 
     # Summary
     parts.append("### Summary")
     total = len(recommendations)
     parts.append(
-        f"- **{total} tests** recommended ({len(critical)} critical, {len(standard)} standard)"
+        f"- **{total} test files** recommended ({len(critical)} critical, {len(standard)} standard)"
     )
     parts.append(f"- AI Provider: {ai_provider.capitalize()} ({ai_model})")
 
     return "\n".join(parts)
+
+
+async def _clone_pr_repo(
+    gh_client: GitHubClient,
+    pr_info: PRInfo,
+    repo_path: str,
+) -> None:
+    """Clone the PR head branch, handling fork PRs.
+
+    For fork PRs, clones from the fork owner's repo instead of the base repo.
+    """
+    pr_details = await gh_client.get_pr_details(pr_info)
+    head_branch = pr_details.get("headRefName", "")
+    # For fork PRs, use fork owner and repo name
+    head_owner_info = pr_details.get("headRepositoryOwner", {})
+    head_repo_info = pr_details.get("headRepository", {})
+    if isinstance(head_owner_info, dict):
+        clone_owner = head_owner_info.get("login", pr_info.owner)
+    else:
+        clone_owner = pr_info.owner
+    if isinstance(head_repo_info, dict):
+        clone_repo = head_repo_info.get("name", pr_info.repo)
+    else:
+        clone_repo = pr_info.repo
+    await gh_client.clone_repo(
+        clone_owner,
+        clone_repo,
+        repo_path,
+        branch=head_branch,
+    )
 
 
 async def analyze_pr(
@@ -260,7 +334,7 @@ async def analyze_pr(
     3. Map changed files to candidate test files (static analysis)
     4. Send PR diff + test mapping + test contents to AI
     5. Parse AI response into structured recommendations
-    6. Optionally post comment on PR
+    6. Post review on PR
     7. Return response
 
     Args:
@@ -275,10 +349,17 @@ async def analyze_pr(
 
     # Parse PR info
     pr_info = body.parse_pr_info()
-    logger.info("Analyzing PR #%d in %s/%s", pr_info.pr_number, pr_info.owner, pr_info.repo)
+    logger.info(
+        "Analyzing PR #%d in %s/%s", pr_info.pr_number, pr_info.owner, pr_info.repo
+    )
 
     # Create GitHub client
-    github_token = body.github_token or settings.github_token.get_secret_value()
+    github_token = body.github_token
+    if not github_token and settings.github_token:
+        github_token = settings.github_token.get_secret_value()
+    if not github_token:
+        msg = "No GitHub token configured. Set GITHUB_TOKEN env var or pass github_token in request body."
+        raise ValueError(msg)
 
     gh_client = GitHubClient(token=github_token)
 
@@ -294,10 +375,10 @@ async def analyze_pr(
 
     try:
         if not repo_path:
-            # Clone the repo to a temp directory
+            # Clone the repo and checkout the PR head branch
             repo_path = tempfile.mkdtemp(prefix="pr-test-oracle-")
             cleanup_repo = True
-            await gh_client.clone_repo(pr_info.owner, pr_info.repo, repo_path)
+            await _clone_pr_repo(gh_client, pr_info, repo_path)
 
         # Map changed files to test files
         test_patterns = body.test_patterns or settings.test_patterns
@@ -305,9 +386,7 @@ async def analyze_pr(
         test_mappings = mapper.map_changed_files(changed_files)
 
         # Collect all candidate test files
-        all_candidates: set[str] = set()
-        for mapping in test_mappings:
-            all_candidates.update(mapping.candidate_tests)
+        all_candidates = {t for m in test_mappings for t in m.candidate_tests}
 
         # Read test file contents for AI context
         test_contents = mapper.get_test_file_contents(sorted(all_candidates))
@@ -349,23 +428,23 @@ async def analyze_pr(
 
         # Build summary
         summary = (
-            f"{len(recommendations)} tests recommended "
+            f"{len(recommendations)} test files recommended "
             f"({critical_count} critical, {standard_count} standard)"
         )
 
-        # Post PR comment if enabled
-        should_post = body.post_comment if body.post_comment is not None else settings.post_comment
-        comment_posted = False
-        comment_url = None
+        # Post PR review
+        review_posted = False
+        review_url = None
 
-        if should_post and recommendations:
+        if recommendations:
             comment_body = _format_pr_comment(recommendations, ai_provider, ai_model)
             try:
-                comment_url = await gh_client.post_comment(pr_info, comment_body)
-                comment_posted = True
-                logger.info("Posted PR comment: %s", comment_url)
+                review_url, review_posted = await gh_client.post_review(
+                    pr_info, comment_body
+                )
+                logger.info("Posted PR review: %s", review_url)
             except RuntimeError:
-                logger.exception("Failed to post PR comment")
+                logger.exception("Failed to post PR review")
 
         return AnalyzeResponse(
             pr_url=body.pr_url,
@@ -373,8 +452,8 @@ async def analyze_pr(
             ai_model=ai_model,
             recommendations=recommendations,
             summary=summary,
-            comment_posted=comment_posted,
-            comment_url=comment_url,
+            review_posted=review_posted,
+            review_url=review_url,
         )
 
     finally:

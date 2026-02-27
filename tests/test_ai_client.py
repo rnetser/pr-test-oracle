@@ -49,12 +49,16 @@ class TestCallAiCli:
     """Tests for call_ai_cli function."""
 
     async def test_unknown_provider(self) -> None:
-        success, output = await call_ai_cli(prompt="test", ai_provider="unknown", ai_model="model")
+        success, output = await call_ai_cli(
+            prompt="test", ai_provider="unknown", ai_model="model"
+        )
         assert success is False
         assert "Unknown AI provider" in output
 
     async def test_missing_model(self) -> None:
-        success, output = await call_ai_cli(prompt="test", ai_provider="claude", ai_model="")
+        success, output = await call_ai_cli(
+            prompt="test", ai_provider="claude", ai_model=""
+        )
         assert success is False
         assert "No AI model configured" in output
 
@@ -64,7 +68,9 @@ class TestCallAiCli:
         mock_result.stdout = "AI response text"
         mock_result.stderr = ""
 
-        with patch("pr_test_oracle.ai_client.asyncio.to_thread", return_value=mock_result):
+        with patch(
+            "pr_test_oracle.ai_client.asyncio.to_thread", return_value=mock_result
+        ):
             success, output = await call_ai_cli(
                 prompt="analyze this", ai_provider="claude", ai_model="sonnet"
             )
@@ -77,7 +83,9 @@ class TestCallAiCli:
         mock_result.stdout = ""
         mock_result.stderr = "Authentication failed"
 
-        with patch("pr_test_oracle.ai_client.asyncio.to_thread", return_value=mock_result):
+        with patch(
+            "pr_test_oracle.ai_client.asyncio.to_thread", return_value=mock_result
+        ):
             success, output = await call_ai_cli(
                 prompt="test", ai_provider="claude", ai_model="sonnet"
             )
@@ -92,7 +100,10 @@ class TestCallAiCli:
             side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=600),
         ):
             success, output = await call_ai_cli(
-                prompt="test", ai_provider="claude", ai_model="sonnet", ai_cli_timeout=10
+                prompt="test",
+                ai_provider="claude",
+                ai_model="sonnet",
+                ai_cli_timeout=10,
             )
         assert success is False
         assert "timed out" in output

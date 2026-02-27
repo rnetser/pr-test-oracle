@@ -16,7 +16,10 @@ class TestPRInfo:
 
     def test_create_pr_info(self) -> None:
         info = PRInfo(
-            owner="owner", repo="repo", pr_number=42, url="https://github.com/owner/repo/pull/42"
+            owner="owner",
+            repo="repo",
+            pr_number=42,
+            url="https://github.com/owner/repo/pull/42",
         )
         assert info.owner == "owner"
         assert info.repo == "repo"
@@ -57,7 +60,6 @@ class TestAnalyzeRequest:
         assert req.ai_model is None
         assert req.github_token is None
         assert req.test_patterns is None
-        assert req.post_comment is None
 
     def test_all_fields_populated(self, sample_pr_url: str) -> None:
         req = AnalyzeRequest(
@@ -67,11 +69,9 @@ class TestAnalyzeRequest:
             ai_model="sonnet",
             github_token="ghp_test",
             test_patterns=["tests/**/*.py"],
-            post_comment=False,
         )
         assert req.repo_path == "/tmp/repo"
         assert req.ai_provider == "claude"
-        assert req.post_comment is False
 
     def test_pr_url_with_dots_and_hyphens(self) -> None:
         """PR URLs with dots and hyphens in owner/repo should be valid."""
@@ -92,7 +92,7 @@ class TestTestRecommendation:
             confidence="high",
         )
         assert rec.test_file == "tests/test_foo.py"
-        assert rec.test_name is None
+        assert rec.test_name == "(all)"
         assert rec.priority == "critical"
 
     def test_invalid_priority(self) -> None:
@@ -121,10 +121,12 @@ class TestAnalyzeResponse:
         resp = AnalyzeResponse(pr_url="https://github.com/o/r/pull/1")
         assert resp.recommendations == []
         assert resp.summary == ""
-        assert resp.comment_posted is False
-        assert resp.comment_url is None
+        assert resp.review_posted is False
+        assert resp.review_url is None
 
-    def test_with_recommendations(self, sample_test_recommendation: TestRecommendation) -> None:
+    def test_with_recommendations(
+        self, sample_test_recommendation: TestRecommendation
+    ) -> None:
         resp = AnalyzeResponse(
             pr_url="https://github.com/o/r/pull/1",
             recommendations=[sample_test_recommendation],

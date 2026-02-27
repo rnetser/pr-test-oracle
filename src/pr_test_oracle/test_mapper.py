@@ -9,6 +9,55 @@ from pr_test_oracle.models import TestMapping
 
 logger = get_logger(name=__name__, level=os.environ.get("LOG_LEVEL", "INFO"))
 
+# Test infrastructure files that should not be treated as test cases
+_EXCLUDED_FILES = frozenset(
+    {
+        "__init__.py",
+        "conftest.py",
+        "setup.py",
+        "conftest.js",
+        "jest.config.js",
+        "jest.config.ts",
+        "vitest.config.ts",
+        "karma.conf.js",
+    }
+)
+
+# Config files whose changes may affect all tests
+_CONFIG_FILES = frozenset(
+    {
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "tox.ini",
+        "pytest.ini",
+        "conftest.py",
+        ".env",
+        "requirements.txt",
+        "requirements-dev.txt",
+        "Makefile",
+    }
+)
+
+# Recognized source file extensions eligible for candidate test mapping
+_SOURCE_EXTENSIONS = frozenset(
+    {
+        ".py",
+        ".js",
+        ".ts",
+        ".jsx",
+        ".tsx",
+        ".go",
+        ".java",
+        ".rb",
+        ".rs",
+        ".cs",
+        ".php",
+        ".sh",
+        ".bash",
+    }
+)
+
 
 class TestMapper:
     """Maps changed source files to candidate test files using static analysis."""
@@ -36,7 +85,7 @@ class TestMapper:
         test_files: set[str] = set()
         for pattern in self._patterns:
             for path in self._repo.glob(pattern):
-                if path.is_file() and path.name not in {"__init__.py", "conftest.py"}:
+                if path.is_file() and path.name not in _EXCLUDED_FILES:
                     test_files.add(str(path.relative_to(self._repo)))
 
         self._test_files = sorted(test_files)
@@ -63,7 +112,7 @@ class TestMapper:
         for changed_file in changed_files:
             path = Path(changed_file)
 
-            # Skip non-Python files and test files themselves
+            # Handle non-Python files: config files, other source files, and non-source files
             if path.suffix != ".py":
                 # Check for config files that affect everything
                 if path.name in _CONFIG_FILES:
@@ -74,13 +123,28 @@ class TestMapper:
                             mapping_reason="Config file change affects all tests",
                         )
                     )
+                    continue
+
+                # Try to find candidates for non-Python source files too
+                if path.suffix in _SOURCE_EXTENSIONS:
+                    candidates = self._find_candidates(path, test_files)
+                    reason = "Naming convention and directory structure mapping"
+                    if not candidates:
+                        reason = "No direct mapping found; AI will determine relevant tests from diff"
+                    mappings.append(
+                        TestMapping(
+                            source_file=changed_file,
+                            candidate_tests=candidates,
+                            mapping_reason=reason,
+                        )
+                    )
                 else:
                     mappings.append(
                         TestMapping(
                             source_file=changed_file,
                             candidate_tests=[],
                             mapping_reason=(
-                                "Non-Python file; AI will determine relevant tests from diff"
+                                "Non-source file; AI will determine relevant tests from diff"
                             ),
                         )
                     )
@@ -91,7 +155,9 @@ class TestMapper:
                 mappings.append(
                     TestMapping(
                         source_file=changed_file,
-                        candidate_tests=[changed_file] if changed_file in test_files else [],
+                        candidate_tests=[changed_file]
+                        if changed_file in test_files
+                        else [],
                         mapping_reason="Changed file is itself a test",
                     )
                 )
@@ -187,31 +253,35 @@ class TestMapper:
         return contents
 
 
-# Config files whose changes may affect all tests
-_CONFIG_FILES = frozenset(
-    {
-        "pyproject.toml",
-        "setup.py",
-        "setup.cfg",
-        "tox.ini",
-        "pytest.ini",
-        "conftest.py",
-        ".env",
-        "requirements.txt",
-        "requirements-dev.txt",
-        "Makefile",
-    }
-)
-
-
 def _is_test_file(path: Path) -> bool:
     """Check if a file path looks like a test file."""
     name = path.name
+    stem = path.stem
     return (
+        # Python
         name.startswith("test_")
-        or name.endswith("_test.py")
+        # File-extension based patterns (Python, JS/TS, Go, Ruby)
+        or name.endswith(
+            (
+                "_test.py",
+                ".test.js",
+                ".test.ts",
+                ".test.jsx",
+                ".test.tsx",
+                ".spec.js",
+                ".spec.ts",
+                ".spec.jsx",
+                ".spec.tsx",
+                "_test.go",
+                "_spec.rb",
+            )
+        )
+        or stem.endswith(("Test", "Tests"))  # Java, C-Sharp
+        # Directory-based
         or "tests" in path.parts
         or "test" in path.parts
+        or "__tests__" in path.parts
+        or "spec" in path.parts
     )
 
 

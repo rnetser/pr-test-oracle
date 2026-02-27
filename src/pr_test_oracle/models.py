@@ -18,29 +18,21 @@ class PRInfo(BaseModel):
 class AnalyzeRequest(BaseModel):
     """Request payload for /analyze endpoint."""
 
-    pr_url: str = Field(description="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)")
-    repo_path: str | None = Field(default=None, description="Optional local path to the repository")
+    pr_url: str = Field(
+        description="GitHub PR URL (e.g., https://github.com/owner/repo/pull/123)"
+    )
+    repo_path: str | None = Field(
+        default=None, description="Optional local path to the repository"
+    )
     repo_url: str | None = Field(
         default=None, description="Repository URL for cloning if repo_path not provided"
     )
     ai_provider: Literal["claude", "gemini", "cursor"] | None = Field(
         default=None, description="AI provider (overrides env var)"
     )
-    ai_model: str | None = Field(default=None, description="AI model (overrides env var)")
-
-    @field_validator("ai_model")
-    @classmethod
-    def validate_ai_model(cls, v: str | None) -> str | None:
-        """Validate ai_model contains only safe characters."""
-        if v is None:
-            return v
-        if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9._:/-]*$", v):
-            msg = (
-                "ai_model must start with an alphanumeric character and contain only "
-                "alphanumeric characters, dots, hyphens, underscores, colons, and slashes"
-            )
-            raise ValueError(msg)
-        return v
+    ai_model: str | None = Field(
+        default=None, description="AI model (overrides env var)"
+    )
 
     ai_cli_timeout: Annotated[int, Field(gt=0)] | None = Field(
         default=None, description="AI CLI timeout in minutes"
@@ -53,7 +45,6 @@ class AnalyzeRequest(BaseModel):
     test_patterns: list[str] | None = Field(
         default=None, description="Glob patterns for test files"
     )
-    post_comment: bool | None = Field(default=None, description="Whether to post PR comment")
 
     @field_validator("pr_url")
     @classmethod
@@ -83,9 +74,19 @@ class TestRecommendation(BaseModel):
     """A single test recommendation."""
 
     test_file: str = Field(description="Path to the test file")
-    test_name: str | None = Field(
-        default=None, description="Specific test name/class if applicable"
+    test_name: str = Field(
+        default="(all)",
+        description="Specific test name/class, or '(all)' for the entire file",
     )
+
+    @field_validator("test_name", mode="before")
+    @classmethod
+    def coerce_null_test_name(cls, v: object) -> object:
+        """Convert null/None test_name to '(all)'."""
+        if v is None:
+            return "(all)"
+        return v
+
     reason: str = Field(description="Why this test should run")
     priority: Literal["critical", "standard"] = Field(description="Test priority")
     confidence: Literal["high", "medium", "low"] = Field(description="Confidence level")
@@ -101,13 +102,19 @@ class AnalyzeResponse(BaseModel):
         default_factory=list, description="Test recommendations"
     )
     summary: str = Field(default="", description="Human-readable summary")
-    comment_posted: bool = Field(default=False, description="Whether a PR comment was posted")
-    comment_url: str | None = Field(default=None, description="URL of the posted comment")
+    review_posted: bool = Field(
+        default=False, description="Whether a PR review was posted"
+    )
+    review_url: str | None = Field(default=None, description="URL of the posted review")
 
 
 class TestMapping(BaseModel):
     """Mapping of a changed source file to candidate test files."""
 
     source_file: str = Field(description="Changed source file path")
-    candidate_tests: list[str] = Field(default_factory=list, description="Related test file paths")
-    mapping_reason: str = Field(default="", description="How the mapping was determined")
+    candidate_tests: list[str] = Field(
+        default_factory=list, description="Related test file paths"
+    )
+    mapping_reason: str = Field(
+        default="", description="How the mapping was determined"
+    )

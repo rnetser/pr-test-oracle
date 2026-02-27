@@ -72,11 +72,13 @@ class TestAnalyzeEndpoint:
                     confidence="high",
                 )
             ],
-            summary="1 tests recommended (1 critical, 0 standard)",
-            comment_posted=False,
+            summary="1 test files recommended (1 critical, 0 standard)",
+            review_posted=False,
         )
 
-        with patch("pr_test_oracle.main.analyze_pr", new_callable=AsyncMock) as mock_analyze:
+        with patch(
+            "pr_test_oracle.main.analyze_pr", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = mock_response
             response = test_client.post(
                 "/analyze",
@@ -109,10 +111,12 @@ class TestAnalyzeEndpoint:
             pr_url="https://github.com/owner/repo/pull/1",
             ai_provider="gemini",
             ai_model="pro",
-            summary="0 tests recommended",
+            summary="0 test files recommended",
         )
 
-        with patch("pr_test_oracle.main.analyze_pr", new_callable=AsyncMock) as mock_analyze:
+        with patch(
+            "pr_test_oracle.main.analyze_pr", new_callable=AsyncMock
+        ) as mock_analyze:
             mock_analyze.return_value = mock_response
             response = test_client.post(
                 "/analyze",
@@ -121,7 +125,6 @@ class TestAnalyzeEndpoint:
                     "ai_provider": "gemini",
                     "ai_model": "pro",
                     "test_patterns": ["tests/**/*.py"],
-                    "post_comment": False,
                     "github_token": "ghp_test",
                 },
             )

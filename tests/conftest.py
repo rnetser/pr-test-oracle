@@ -94,9 +94,9 @@ def sample_analyze_response(
         ai_provider="claude",
         ai_model="test-model",
         recommendations=[sample_test_recommendation],
-        summary="1 tests recommended (1 critical, 0 standard)",
-        comment_posted=True,
-        comment_url="https://github.com/owner/repo/pull/123#issuecomment-1",
+        summary="1 test files recommended (1 critical, 0 standard)",
+        review_posted=True,
+        review_url="https://github.com/owner/repo/pull/123#issuecomment-1",
     )
 
 

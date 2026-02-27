@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     # GitHub configuration
-    github_token: SecretStr
+    github_token: SecretStr | None = None
 
     # AI configuration
     ai_provider: str | None = None
@@ -28,10 +28,40 @@ class Settings(BaseSettings):
     ai_cli_timeout: int = Field(default=10, gt=0)
 
     # Test discovery
-    test_patterns: list[str] = Field(default_factory=lambda: ["tests/**/*.py", "test_*.py"])
-
-    # PR comment posting
-    post_comment: bool = True
+    test_patterns: list[str] = Field(
+        default_factory=lambda: [
+            # Python
+            "tests/**/*.py",
+            "test_*.py",
+            "*_test.py",
+            # JavaScript / TypeScript
+            "**/*.test.js",
+            "**/*.test.ts",
+            "**/*.test.jsx",
+            "**/*.test.tsx",
+            "**/*.spec.js",
+            "**/*.spec.ts",
+            "**/*.spec.jsx",
+            "**/*.spec.tsx",
+            "__tests__/**/*",
+            # Go
+            "**/*_test.go",
+            # Java
+            "**/src/test/**/*.java",
+            # Ruby
+            "spec/**/*_spec.rb",
+            "test/**/*_test.rb",
+            # Rust
+            "tests/**/*.rs",
+            # C# / .NET
+            "**/*Tests.cs",
+            "**/*Test.cs",
+            # PHP
+            "tests/**/*Test.php",
+            # Shell
+            "tests/**/*.bats",
+        ],
+    )
 
     # Custom prompt file path
     prompt_file: str = "/app/PROMPT.md"
