@@ -170,7 +170,11 @@ class TestHelperFunctions:
         assert _is_test_file(Path("foo_test.py")) is True
 
     def test_is_test_file_in_tests_dir(self) -> None:
-        assert _is_test_file(Path("tests/helpers.py")) is True
+        # Directory location alone doesn't make a file a test
+        # File must follow naming conventions (test_* or *_test pattern, etc.)
+        assert _is_test_file(Path("tests/helpers.py")) is False
+        # But test_helpers.py in tests/ is still a test by naming convention
+        assert _is_test_file(Path("tests/test_helpers.py")) is True
 
     def test_is_not_test_file(self) -> None:
         assert _is_test_file(Path("src/foo.py")) is False

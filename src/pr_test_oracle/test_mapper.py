@@ -116,45 +116,18 @@ class TestMapper:
         for changed_file in changed_files:
             path = Path(changed_file)
 
-            # Handle non-Python files: config files, other source files, and non-source files
-            if path.suffix != ".py":
-                # Check for config files that affect everything
-                if path.name in _CONFIG_FILES:
-                    mappings.append(
-                        TestMapping(
-                            source_file=changed_file,
-                            candidate_tests=test_files,
-                            mapping_reason="Config file change affects all tests",
-                        )
+            # 1. Config files affect all tests (regardless of extension)
+            if path.name in _CONFIG_FILES:
+                mappings.append(
+                    TestMapping(
+                        source_file=changed_file,
+                        candidate_tests=test_files,
+                        mapping_reason="Config file change affects all tests",
                     )
-                    continue
-
-                # Try to find candidates for non-Python source files too
-                if path.suffix in _SOURCE_EXTENSIONS:
-                    candidates = self._find_candidates(path, test_files)
-                    reason = "Naming convention and directory structure mapping"
-                    if not candidates:
-                        reason = "No direct mapping found; AI will determine relevant tests from diff"
-                    mappings.append(
-                        TestMapping(
-                            source_file=changed_file,
-                            candidate_tests=candidates,
-                            mapping_reason=reason,
-                        )
-                    )
-                else:
-                    mappings.append(
-                        TestMapping(
-                            source_file=changed_file,
-                            candidate_tests=[],
-                            mapping_reason=(
-                                "Non-source file; AI will determine relevant tests from diff"
-                            ),
-                        )
-                    )
+                )
                 continue
 
-            # Skip if the changed file is itself a test file
+            # 2. Test files map to themselves (regardless of extension)
             if _is_test_file(path):
                 mappings.append(
                     TestMapping(
@@ -167,10 +140,22 @@ class TestMapper:
                 )
                 continue
 
+            # 3. Non-source files (README.md, images, etc.) — no mapping
+            if path.suffix not in _SOURCE_EXTENSIONS:
+                mappings.append(
+                    TestMapping(
+                        source_file=changed_file,
+                        candidate_tests=[],
+                        mapping_reason="Non-source file; AI will determine relevant tests from diff",
+                    )
+                )
+                continue
+
+            # 4. Source files — find candidate tests
             candidates = self._find_candidates(path, test_files)
             reason = "Naming convention and directory structure mapping"
             if not candidates:
-                reason = "No direct mapping found; AI will determine relevant tests"
+                reason = "No direct mapping found; AI will determine relevant tests from diff"
 
             mappings.append(
                 TestMapping(
@@ -265,28 +250,17 @@ def _is_test_file(path: Path) -> bool:
     return (
         # Python
         name.startswith("test_")
-        # File-extension based patterns (Python, JS/TS, Go, Ruby)
-        or name.endswith(
-            (
-                "_test.py",
-                ".test.js",
-                ".test.ts",
-                ".test.jsx",
-                ".test.tsx",
-                ".spec.js",
-                ".spec.ts",
-                ".spec.jsx",
-                ".spec.tsx",
-                "_test.go",
-                "_spec.rb",
-            )
-        )
-        or stem.endswith(("Test", "Tests"))  # Java, C-Sharp
-        # Directory-based
-        or "tests" in path.parts
-        or "test" in path.parts
-        or "__tests__" in path.parts
-        or "spec" in path.parts
+        or name.endswith("_test.py")
+        # JS/TS
+        or name.endswith((".test.js", ".test.ts", ".test.jsx", ".test.tsx"))
+        or name.endswith((".spec.js", ".spec.ts", ".spec.jsx", ".spec.tsx"))
+        # Go
+        or name.endswith("_test.go")
+        # Ruby
+        or name.endswith("_spec.rb")
+        # Java/C#
+        or stem.endswith("Test")
+        or stem.endswith("Tests")
     )
 
 
