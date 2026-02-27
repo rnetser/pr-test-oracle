@@ -102,7 +102,15 @@ def _build_ai_prompt(
 
     parts.append(
         "As an expert software testing engineer, analyze all modified files "
-        "in this PR and create a targeted test execution plan.\n"
+        "in this PR and create a targeted test execution plan.\n\n"
+        "IMPORTANT: The repository may be a source code project with separate tests, "
+        "OR it may be a test suite repository where the changed files ARE the tests. "
+        "Adapt your analysis accordingly:\n"
+        "- If changed files are source code: recommend which tests verify the changes.\n"
+        "- If changed files are themselves tests: recommend running those changed tests, "
+        "plus any other tests that share fixtures, utilities, or base classes with them.\n"
+        "- If changed files are test utilities/fixtures/conftest: recommend running all "
+        "tests that depend on or import from the changed utilities.\n"
     )
 
     parts.append("## PR Diff\n")
@@ -147,9 +155,11 @@ def _build_ai_prompt(
     parts.append("## Analysis Instructions\n")
     parts.append(
         """For each changed file in the PR, determine:
-1. Which existing tests DIRECTLY verify the changed code paths
-2. Which tests could BREAK due to downstream dependencies (imports, shared state, API contracts)
-3. Whether any changes are purely cosmetic (formatting, comments, whitespace) and need NO testing
+1. If the changed file IS a test: recommend running it (the test itself was modified and needs execution)
+2. If the changed file is a test utility, fixture, or conftest: recommend running ALL tests that import or depend on it
+3. If the changed file is source code: recommend which tests DIRECTLY verify the changed code paths
+4. Which other tests could BREAK due to downstream dependencies (imports, shared state, API contracts)
+5. Whether any changes are purely cosmetic (formatting, comments, whitespace) and need NO testing
 
 Be SELECTIVE — only recommend tests with a clear, explainable connection to the changes.
 Do NOT recommend tests just because they are in the same module or have a similar name.
@@ -442,10 +452,15 @@ async def analyze_pr(
 
         comment_body = _format_pr_comment(recommendations, ai_provider, ai_model)
         try:
-            review_url, review_posted = await gh_client.post_review(
-                pr_info, comment_body
-            )
-            logger.info("Posted PR review: %s", review_url)
+            if recommendations:
+                review_url, review_posted = await gh_client.post_review(
+                    pr_info, comment_body
+                )
+                logger.info("Posted PR review: %s", review_url)
+            else:
+                review_url = await gh_client.post_comment(pr_info, comment_body)
+                review_posted = False
+                logger.info("Posted PR comment: %s", review_url)
         except RuntimeError:
             logger.exception("Failed to post PR review")
 
