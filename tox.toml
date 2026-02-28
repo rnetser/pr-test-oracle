@@ -1,0 +1,28 @@
+skipsdist = true
+
+envlist = ["unused-code", "unittests"]
+
+[env.unused-code]
+deps = ["python-utility-scripts"]
+commands = [
+  [
+    "pyutils-unusedcode",
+    "--exclude-function-prefixes",
+    "'_parse_first_diff_line','_detect_language','_build_ai_prompt','_format_pr_comment','_parse_ai_response','_resolve_ai_config','_merge_settings','_clone_pr_repo','_get_ai_cli_timeout','_build_claude_cmd','_build_gemini_cmd','_build_cursor_cmd','_is_test_file','_strip_source_prefix','_strip_test_prefix','coerce_null_test_name','validate_pr_url','run','full_env_vars','sample_analyze_request','sample_pr_info','sample_analyze_response','sample_test_mapping'",
+  ],
+]
+
+[env.unittests]
+deps = ["uv"]
+commands = [
+  [
+    "uv",
+    "run",
+    "--extra",
+    "dev",
+    "pytest",
+    "-n",
+    "auto",
+    "tests",
+  ],
+]

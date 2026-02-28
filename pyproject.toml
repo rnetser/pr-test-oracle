@@ -1,0 +1,43 @@
+[project]
+name = "pr-test-oracle"
+version = "0.1.0"
+description = "AI-powered service that analyzes GitHub PRs and recommends which tests to run"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "httpx",
+    "pydantic-settings",
+    "python-simple-logger",
+]
+
+[project.scripts]
+pr-test-oracle = "pr_test_oracle.main:run"
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "pytest-xdist"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pr_test_oracle"]
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+show_error_codes = true
+warn_unused_ignores = true
+strict_equality = true
+extra_checks = true
+warn_unused_configs = true
+warn_redundant_casts = true
