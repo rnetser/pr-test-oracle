@@ -129,6 +129,23 @@ curl -X POST http://localhost:8000/analyze \
 
 Note: Set `post_comment` to `false` to receive only the JSON response without posting a comment to the PR.
 
+#### Example with Custom Prompt File
+
+To provide additional AI instructions via a custom prompt file:
+
+```bash
+curl -X POST http://localhost:8000/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "pr_url": "https://github.com/myorg/myrepo/pull/42",
+    "ai_provider": "claude",
+    "ai_model": "sonnet",
+    "prompt_file": "/path/to/custom-prompt.md"
+  }'
+```
+
+The `prompt_file` parameter accepts a path to a markdown file containing additional AI instructions. The file content is appended to the main AI prompt as "Additional Instructions". If the file does not exist, it is silently skipped without error.
+
 #### Example Response
 
 ```json
