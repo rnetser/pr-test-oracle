@@ -92,6 +92,7 @@ Analyze a PR and return test recommendations.
 | `ai_cli_timeout` | integer | No | AI CLI timeout in minutes (must be > 0). Overrides the `AI_CLI_TIMEOUT` env var. |
 | `github_token` | string | No | GitHub token for API access. Overrides the `GITHUB_TOKEN` env var. Required via env var OR per-request payload. |
 | `test_patterns` | list[string] | No | Glob patterns for test file discovery (e.g., `["tests/**/*.py"]`). Overrides the `TEST_PATTERNS` env var. |
+| `post_comment` | boolean | No | Whether to post a comment on the PR (default: true). Set false to get JSON only. |
 
 #### Response Payload
 
@@ -120,9 +121,12 @@ curl -X POST http://localhost:8000/analyze \
     "ai_provider": "claude",
     "ai_model": "sonnet",
     "github_token": "ghp_xxxxxxxxxxxx",
-    "test_patterns": ["tests/**/*.py"]
+    "test_patterns": ["tests/**/*.py"],
+    "post_comment": true
   }'
 ```
+
+Note: Set `post_comment` to `false` to receive only the JSON response without posting a comment to the PR.
 
 #### Example Response
 
@@ -178,6 +182,7 @@ All settings are loaded from environment variables (or a `.env` file). Every env
 | `AI_MODEL` | AI model name | None (required) | `ai_model` |
 | `AI_CLI_TIMEOUT` | AI CLI timeout in minutes | `10` | `ai_cli_timeout` |
 | `TEST_PATTERNS` | JSON array of glob patterns for test files | `["tests/**/*.py", "test_*.py"]` | `test_patterns` |
+| `POST_COMMENT` | Post recommendations on the PR | true | `post_comment` |
 | `PROMPT_FILE` | Path to a custom prompt file | `/app/PROMPT.md` | -- |
 | `LOG_LEVEL` | Logging level | `INFO` | -- |
 | `DEBUG` | Enable uvicorn auto-reload | `false` | -- |
@@ -211,6 +216,7 @@ PR Test Oracle ships as a composite GitHub Action. It sends a request to a runni
 | `ai_model` | No | -- | AI model to use |
 | `test_patterns` | No | -- | JSON array of test file glob patterns |
 | `github_token` | Yes | -- | GitHub token for API access |
+| `post_comment` | No | true | Whether to post a comment on the PR |
 
 ### Example Workflow
 
