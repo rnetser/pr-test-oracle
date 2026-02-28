@@ -162,6 +162,30 @@ class TestParseAiResponse:
         result = _parse_ai_response("[]")
         assert result == []
 
+    def test_malformed_item_skipped(self) -> None:
+        """Malformed items should be skipped, valid ones kept."""
+        data = json.dumps(
+            [
+                {
+                    "test_file": "tests/test_auth.py",
+                    "reason": "r",
+                    "priority": "critical",
+                    "confidence": "high",
+                },
+                {"bad_field": "invalid"},
+                {
+                    "test_file": "tests/test_api.py",
+                    "reason": "r2",
+                    "priority": "standard",
+                    "confidence": "low",
+                },
+            ]
+        )
+        result = _parse_ai_response(data)
+        assert len(result) == 2
+        assert result[0].test_file == "tests/test_auth.py"
+        assert result[1].test_file == "tests/test_api.py"
+
 
 class TestBuildAiPrompt:
     """Tests for _build_ai_prompt."""
@@ -334,6 +358,68 @@ class TestAnalyzePr:
 
         assert "failed" in result.summary.lower()
         assert result.recommendations == []
+
+    async def test_invalid_repo_path_raises(self) -> None:
+        """Non-existent repo_path should raise ValueError."""
+        body = AnalyzeRequest(
+            pr_url="https://github.com/owner/repo/pull/1",
+            ai_provider="claude",
+            ai_model="sonnet",
+            repo_path="/nonexistent/path/xyz",
+        )
+        settings = Settings(github_token="test-token")
+        with (
+            patch("pr_test_oracle.analyzer.GitHubClient") as mock_gh_class,
+        ):
+            mock_gh = mock_gh_class.return_value
+            mock_gh.get_pr_diff = AsyncMock(return_value="diff")
+            mock_gh.get_pr_files = AsyncMock(return_value=["src/foo.py"])
+            with pytest.raises(ValueError, match="does not exist"):
+                await analyze_pr(body, settings)
+
+    async def test_invalid_test_pattern_traversal_raises(self) -> None:
+        """Test patterns with '..' should raise ValueError."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            body = AnalyzeRequest(
+                pr_url="https://github.com/owner/repo/pull/1",
+                ai_provider="claude",
+                ai_model="sonnet",
+                repo_path=tmp,
+                test_patterns=["../../etc/passwd"],
+            )
+            settings = Settings(github_token="test-token")
+            with (
+                patch("pr_test_oracle.analyzer.GitHubClient") as mock_gh_class,
+            ):
+                mock_gh = mock_gh_class.return_value
+                mock_gh.get_pr_diff = AsyncMock(return_value="diff")
+                mock_gh.get_pr_files = AsyncMock(return_value=["src/foo.py"])
+                with pytest.raises(ValueError, match="Invalid test pattern"):
+                    await analyze_pr(body, settings)
+
+    async def test_invalid_test_pattern_absolute_raises(self) -> None:
+        """Test patterns with absolute paths should raise ValueError."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            body = AnalyzeRequest(
+                pr_url="https://github.com/owner/repo/pull/1",
+                ai_provider="claude",
+                ai_model="sonnet",
+                repo_path=tmp,
+                test_patterns=["/etc/passwd"],
+            )
+            settings = Settings(github_token="test-token")
+            with (
+                patch("pr_test_oracle.analyzer.GitHubClient") as mock_gh_class,
+            ):
+                mock_gh = mock_gh_class.return_value
+                mock_gh.get_pr_diff = AsyncMock(return_value="diff")
+                mock_gh.get_pr_files = AsyncMock(return_value=["src/foo.py"])
+                with pytest.raises(ValueError, match="absolute path"):
+                    await analyze_pr(body, settings)
 
     async def test_missing_github_token_raises(self) -> None:
         body = AnalyzeRequest(

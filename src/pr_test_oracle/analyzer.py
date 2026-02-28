@@ -420,6 +420,9 @@ async def analyze_pr(
             if ".." in pattern:
                 msg = f"Invalid test pattern (contains '..'): {pattern}"
                 raise ValueError(msg)
+            if pattern.startswith("/"):
+                msg = f"Invalid test pattern (absolute path): {pattern}"
+                raise ValueError(msg)
         mapper = TestMapper(repo_path, test_patterns)
         test_mappings = mapper.map_changed_files(changed_files)
 
