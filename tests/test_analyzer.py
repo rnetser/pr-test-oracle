@@ -218,6 +218,18 @@ class TestBuildAiPrompt:
         assert "JSON array" in prompt
         assert "priority" in prompt
 
+    def test_includes_custom_prompt(self, tmp_path) -> None:
+        prompt_file = tmp_path / "PROMPT.md"
+        prompt_file.write_text("Always prioritize integration tests over unit tests.")
+        prompt = _build_ai_prompt("diff", [], {}, str(prompt_file))
+        assert "Always prioritize integration tests" in prompt
+        assert "Additional Instructions" in prompt
+
+    def test_missing_prompt_file_ignored(self) -> None:
+        prompt = _build_ai_prompt("diff", [], {}, "/nonexistent/PROMPT.md")
+        assert "Additional Instructions" not in prompt
+        assert "diff" in prompt
+
 
 class TestFormatPrComment:
     """Tests for _format_pr_comment."""
@@ -463,6 +475,64 @@ class TestAnalyzePr:
         # Verify post_review was NOT called
         mock_gh.post_review.assert_not_called()
         mock_gh.post_comment.assert_not_called()
+
+    async def test_prompt_file_flows_through(self, tmp_path) -> None:
+        """Verify prompt_file flows from request through to AI prompt."""
+        # Create a custom prompt file with unique text
+        prompt_file = tmp_path / "PROMPT.md"
+        unique_text = "UNIQUE_CUSTOM_INSTRUCTION_12345"
+        prompt_file.write_text(unique_text)
+
+        body = AnalyzeRequest(
+            pr_url="https://github.com/owner/repo/pull/1",
+            ai_provider="claude",
+            ai_model="sonnet",
+            repo_path=str(tmp_path),
+            prompt_file=str(prompt_file),
+            post_comment=False,
+        )
+        settings = Settings(github_token="test-token")
+
+        # Merge settings should pick up prompt_file
+        merged = _merge_settings(body, settings)
+        assert merged.prompt_file == str(prompt_file)
+
+        ai_response = json.dumps(
+            [
+                {
+                    "test_file": "tests/test_auth.py",
+                    "reason": "Changed auth",
+                    "priority": "critical",
+                    "confidence": "high",
+                }
+            ]
+        )
+
+        captured_prompt = None
+
+        async def mock_call_ai_cli(prompt, **kwargs):
+            nonlocal captured_prompt
+            captured_prompt = prompt
+            return True, ai_response
+
+        with (
+            patch("pr_test_oracle.analyzer.GitHubClient") as mock_gh_class,
+            patch("pr_test_oracle.analyzer.TestMapper") as mock_mapper_class,
+            patch("pr_test_oracle.analyzer.call_ai_cli", side_effect=mock_call_ai_cli),
+        ):
+            mock_gh = mock_gh_class.return_value
+            mock_gh.get_pr_diff = AsyncMock(return_value="diff content")
+            mock_gh.get_pr_files = AsyncMock(return_value=["src/auth.py"])
+            mock_mapper = mock_mapper_class.return_value
+            mock_mapper.map_changed_files.return_value = []
+            mock_mapper.get_test_file_contents.return_value = {}
+
+            await analyze_pr(body, merged)
+
+        # Verify the custom prompt text made it into the AI prompt
+        assert captured_prompt is not None
+        assert unique_text in captured_prompt
+        assert "Additional Instructions" in captured_prompt
 
     async def test_missing_github_token_raises(self) -> None:
         body = AnalyzeRequest(

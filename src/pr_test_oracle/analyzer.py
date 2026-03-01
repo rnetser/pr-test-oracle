@@ -65,6 +65,7 @@ def _merge_settings(body: AnalyzeRequest, settings: Settings) -> Settings:
         "ai_cli_timeout",
         "test_patterns",
         "post_comment",
+        "prompt_file",
     ]
     for field in direct_fields:
         value = getattr(body, field, None)
@@ -94,6 +95,7 @@ def _build_ai_prompt(
     pr_diff: str,
     test_mappings: list[TestMapping],
     test_contents: dict[str, str],
+    prompt_file: str = "",
 ) -> str:
     """Build the AI prompt for test recommendation analysis.
 
@@ -190,6 +192,19 @@ Example:
 ]
 """
     )
+
+    # Append custom prompt instructions if file exists
+    if prompt_file:
+        prompt_path = Path(prompt_file)
+        if prompt_path.is_file():
+            try:
+                custom_instructions = prompt_path.read_text(encoding="utf-8").strip()
+                if custom_instructions:
+                    parts.append("## Additional Instructions\n")
+                    parts.append(custom_instructions)
+                    parts.append("\n")
+            except OSError:
+                logger.warning("Failed to read custom prompt file: %s", prompt_file)
 
     return "\n".join(parts)
 
@@ -433,8 +448,26 @@ async def analyze_pr(
         # Read test file contents for AI context
         test_contents = mapper.get_test_file_contents(sorted(all_candidates))
 
+        # Validate prompt_file path
+        prompt_file = settings.prompt_file
+        if prompt_file:
+            prompt_path = Path(prompt_file).resolve()
+            # Only allow prompt files under repo_path or /app/
+            allowed_bases = [Path("/app").resolve()]
+            if repo_path:
+                allowed_bases.append(Path(repo_path).resolve())
+            if not any(
+                prompt_path == base or prompt_path.is_relative_to(base)
+                for base in allowed_bases
+            ):
+                logger.warning(
+                    "Rejected prompt file outside allowed directories: %s",
+                    prompt_file,
+                )
+                prompt_file = ""
+
         # Build AI prompt
-        prompt = _build_ai_prompt(pr_diff, test_mappings, test_contents)
+        prompt = _build_ai_prompt(pr_diff, test_mappings, test_contents, prompt_file)
 
         # Call AI
         ai_cli_timeout = body.ai_cli_timeout or settings.ai_cli_timeout
