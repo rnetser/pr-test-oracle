@@ -674,7 +674,9 @@ class TestAnalyzePr:
         assert "USER_SUPPLIED_INSTRUCTION_XYZ" in captured_prompt
         assert "Additional Instructions" in captured_prompt
 
-    async def test_request_prompt_takes_precedence_over_repo(self, tmp_path: Path) -> None:
+    async def test_request_prompt_takes_precedence_over_repo(
+        self, tmp_path: Path
+    ) -> None:
         """Per-request raw_prompt takes precedence over TESTS_ORACLE_PROMPT.md in repo."""
         # Create repo-level TESTS_ORACLE_PROMPT.md
         oracle_prompt = tmp_path / "TESTS_ORACLE_PROMPT.md"

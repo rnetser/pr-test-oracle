@@ -222,7 +222,7 @@ def _detect_language(file_path: str) -> str:
     return language_map.get(ext, "")
 
 
-def _parse_items(data: list) -> list[TestRecommendation]:
+def _parse_items(data: list[dict[str, Any]]) -> list[TestRecommendation]:
     """Parse list of dicts into TestRecommendation, skipping malformed items."""
     results: list[TestRecommendation] = []
     for item in data:
@@ -443,16 +443,19 @@ async def analyze_pr(
         # Determine custom prompt: request raw_prompt > repo auto-discovery
         if body.raw_prompt:
             custom_prompt = body.raw_prompt.strip()
-            logger.debug("Using raw prompt from request (%d chars)", len(custom_prompt))
+            logger.debug("Using raw prompt from the request")
+
         elif (Path(repo_path) / "TESTS_ORACLE_PROMPT.md").is_file():
             prompt_path = Path(repo_path) / "TESTS_ORACLE_PROMPT.md"
             try:
                 custom_prompt = prompt_path.read_text(encoding="utf-8").strip()
-                logger.debug("Using prompt file: %s", prompt_path)
+                logger.debug("Using prompt file from the repo: %s", prompt_path)
             except OSError:
                 logger.warning("Failed to read prompt file: %s", prompt_path)
                 custom_prompt = ""
+
         else:
+            logger.debug("No custom prompt was provided.")
             custom_prompt = ""
 
         # Build AI prompt

@@ -215,6 +215,7 @@ PR Test Oracle supports two sources of additional AI instructions, resolved by t
 2. **Repository-level prompt** (`TESTS_ORACLE_PROMPT.md` in the repo root): Auto-discovered when the server clones or accesses the repository. Useful for per-repo customization such as domain-specific guidance or test naming conventions.
 
 The first source that exists is used. If neither is provided, the analysis proceeds without additional instructions.
+This allows you to customize AI behavior without modifying the service code. For example, you could provide a custom prompt to enforce specific test naming conventions or add domain-specific guidance.
 
 #### Sending a prompt file as raw text
 
