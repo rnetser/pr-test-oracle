@@ -730,6 +730,59 @@ class TestAnalyzePr:
         assert "REPO_INSTRUCTION_222" not in captured_prompt
         assert "Additional Instructions" in captured_prompt
 
+    async def test_whitespace_raw_prompt_falls_back_to_repo(
+        self, tmp_path: Path
+    ) -> None:
+        """Whitespace-only raw_prompt should fall back to repo TESTS_ORACLE_PROMPT.md."""
+        oracle_prompt = tmp_path / "TESTS_ORACLE_PROMPT.md"
+        oracle_prompt.write_text("REPO_FALLBACK_INSTRUCTION_456")
+
+        body = AnalyzeRequest(
+            pr_url="https://github.com/owner/repo/pull/1",
+            ai_provider="claude",
+            ai_model="sonnet",
+            repo_path=str(tmp_path),
+            post_comment=False,
+            raw_prompt="   ",
+        )
+        settings = Settings(github_token="test-token")
+
+        ai_response = json.dumps(
+            [
+                {
+                    "test_file": "tests/test_auth.py",
+                    "reason": "Changed auth",
+                    "priority": "critical",
+                    "confidence": "high",
+                }
+            ]
+        )
+
+        captured_prompt = None
+
+        async def mock_call_ai_cli(prompt, **kwargs):
+            nonlocal captured_prompt
+            captured_prompt = prompt
+            return True, ai_response
+
+        with (
+            patch("pr_test_oracle.analyzer.GitHubClient") as mock_gh_class,
+            patch("pr_test_oracle.analyzer.TestMapper") as mock_mapper_class,
+            patch("pr_test_oracle.analyzer.call_ai_cli", side_effect=mock_call_ai_cli),
+        ):
+            mock_gh = mock_gh_class.return_value
+            mock_gh.get_pr_diff = AsyncMock(return_value="diff content")
+            mock_gh.get_pr_files = AsyncMock(return_value=["src/auth.py"])
+            mock_mapper = mock_mapper_class.return_value
+            mock_mapper.map_changed_files.return_value = []
+            mock_mapper.get_test_file_contents.return_value = {}
+
+            await analyze_pr(body, settings)
+
+        assert captured_prompt is not None
+        assert "REPO_FALLBACK_INSTRUCTION_456" in captured_prompt
+        assert "Additional Instructions" in captured_prompt
+
     async def test_missing_github_token_raises(self) -> None:
         body = AnalyzeRequest(
             pr_url="https://github.com/o/r/pull/1",

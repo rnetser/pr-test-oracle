@@ -129,9 +129,9 @@ curl -X POST http://localhost:8000/analyze \
 
 Note: Set `post_comment` to `false` to receive only the JSON response without posting a comment to the PR.
 
-#### Example with Custom Prompt File
+#### Example with Custom Prompt Text
 
-To provide additional AI instructions via a custom prompt file:
+To provide additional AI instructions inline with the request:
 
 ```bash
 curl -X POST http://localhost:8000/analyze \
@@ -140,11 +140,11 @@ curl -X POST http://localhost:8000/analyze \
     "pr_url": "https://github.com/myorg/myrepo/pull/42",
     "ai_provider": "claude",
     "ai_model": "sonnet",
-    "prompt_file": "/path/to/custom-prompt.md"
+    "raw_prompt": "Focus on integration tests. Prefer marker-based recommendations."
   }'
 ```
 
-The `prompt_file` parameter accepts a path to a markdown file containing additional AI instructions. The file content is appended to the main AI prompt as "Additional Instructions". If the file does not exist, it is silently skipped without error.
+The `raw_prompt` field accepts inline text with additional AI instructions. The text is appended to the main AI prompt as "Additional Instructions". Alternatively, place a `TESTS_ORACLE_PROMPT.md` file in the repository root for automatic discovery.
 
 #### Example Response
 

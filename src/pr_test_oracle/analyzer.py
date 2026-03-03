@@ -441,8 +441,8 @@ async def analyze_pr(
         test_contents = mapper.get_test_file_contents(sorted(all_candidates))
 
         # Determine custom prompt: request raw_prompt > repo auto-discovery
-        if body.raw_prompt:
-            custom_prompt = body.raw_prompt.strip()
+        custom_prompt = (body.raw_prompt or "").strip()
+        if custom_prompt:
             logger.debug("Using raw prompt from the request")
 
         elif (Path(repo_path) / "TESTS_ORACLE_PROMPT.md").is_file():
@@ -450,7 +450,7 @@ async def analyze_pr(
             try:
                 custom_prompt = prompt_path.read_text(encoding="utf-8").strip()
                 logger.debug("Using prompt file from the repo: %s", prompt_path)
-            except OSError:
+            except (OSError, UnicodeDecodeError):
                 logger.warning("Failed to read prompt file: %s", prompt_path)
                 custom_prompt = ""
 
